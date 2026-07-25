@@ -119,7 +119,7 @@ Consulta del usuario: "{query}"
         prompt = self._construir_prompt_etapas(query)
 
         if self.client_genai:
-            models_to_try = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
+            models_to_try = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemma-4-26b-a4b-it']
             errors_by_type = {"auth": None, "quota": None, "not_found": None, "other": None}
 
             for model_name in models_to_try:

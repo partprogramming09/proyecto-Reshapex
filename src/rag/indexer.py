@@ -10,7 +10,9 @@ from llama_index.core import (
     SimpleDirectoryReader,
     StorageContext,
     load_index_from_storage,
+    Settings,
 )
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 
 
@@ -81,6 +83,9 @@ def load_or_create_index() -> Optional[VectorStoreIndex]:
     data_raw_dir = settings["data_raw_dir"]
     storage_dir = settings["storage_dir"]
 
+    Settings.chunk_size = settings["chunk_size"]
+    Settings.chunk_overlap = settings["chunk_overlap"]
+
     data_raw_dir.mkdir(parents=True, exist_ok=True)
     storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -128,7 +133,15 @@ def load_or_create_index() -> Optional[VectorStoreIndex]:
         num_docs = len(documents)
         print(f"[RAG] {num_docs} páginas/fragmentos extraídos")
 
-        index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
+        splitter = SentenceSplitter(
+            chunk_size=settings["chunk_size"],
+            chunk_overlap=settings["chunk_overlap"],
+        )
+        index = VectorStoreIndex.from_documents(
+            documents,
+            embed_model=embed_model,
+            transformations=[splitter],
+        )
         index.storage_context.persist(persist_dir=str(storage_dir))
 
         hash_file.write_text(hash_actual)

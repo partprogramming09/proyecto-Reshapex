@@ -6,21 +6,26 @@ from src.rag.indexer import load_or_create_index, has_documents
 from src.core.engine import LSElectricAgentEngine
 
 
+from src.core.memory import AgentMemoryManager
+
+
 class FallbackAgentWrapper:
-    """Wrapper que usa LSElectricAgentEngine con contexto RAG opcional.
+    """Wrapper que usa LSElectricAgentEngine con contexto RAG opcional y AgentMemoryManager.
 
     Se utiliza como fallback cuando ReActAgent no puede construirse.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, token_limit: int = 3000):
         """Inicializa el wrapper.
 
         Args:
             api_key: API key de Gemini (opcional).
+            token_limit: Límite de tokens de entrada para el buffer de memoria.
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self._rag_context = None
         self._rag_loaded = False
+        self.memory_manager = AgentMemoryManager(token_limit=token_limit)
 
     def _load_rag_context(self) -> Union[Any, bool]:
         """Carga el contexto RAG si hay documentos disponibles.
@@ -52,7 +57,7 @@ class FallbackAgentWrapper:
             return False
 
     def chat(self, message: str) -> str:
-        """Procesa un mensaje del usuario.
+        """Procesa un mensaje del usuario utilizando AgentMemoryManager para recordar el contexto.
 
         Args:
             message: Mensaje del usuario.
@@ -76,5 +81,13 @@ class FallbackAgentWrapper:
         if rag_context:
             engine._rag_context = rag_context
 
-        result = engine.process_query(message)
-        return result["clean_response"]
+        history_str = self.memory_manager.get_formatted_history_text(max_turns=4)
+        history_context = f"[HISTORIAL RECIENTE CONVERSACIÓN]:\n{history_str}\n\n" if history_str else ""
+
+        query_with_history = f"{history_context}{message}" if history_context else message
+        result = engine.process_query(query_with_history)
+        response = result["clean_response"]
+
+        self.memory_manager.add_user_message(message)
+        self.memory_manager.add_assistant_message(response)
+        return response

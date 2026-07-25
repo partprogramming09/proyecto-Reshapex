@@ -63,8 +63,8 @@ class LSElectricAgentEngine:
     def _validate_input(self, query: str) -> Optional[str]:
         if not query or not query.strip():
             return "La consulta no puede estar vacía."
-        if len(query) > 500:
-            return "La consulta excede el límite de 500 caracteres."
+        if len(query) > 4000:
+            return "La consulta excede el límite de 4000 caracteres."
         return None
 
     def _build_stage_prompt(self, query: str) -> str:

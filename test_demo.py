@@ -14,15 +14,21 @@ def run_test():
 
     agent = AgentFactory.build_agent()
 
-    query = "Tengo un error OCT en mi variador iG5A de 5.5kW al acelerar"
-    print(f"\n[Consulta]: {query}")
-    print("\n--- [PROCESANDO] ---")
-    response = agent.chat(query)
+    query1 = "Tengo un error OCT en mi variador iG5A de 5.5kW al acelerar"
+    print(f"\n[Consulta 1]: {query1}")
+    print("\n--- [PROCESANDO TURNO 1] ---")
+    response1 = agent.chat(query1)
+    print("\n--- [RESULTADO 1] ---")
+    print(response1)
 
-    print("\n--- [RESULTADO] ---")
-    print(response)
+    query2 = "¿Cuál era el modelo de sustitución que me recomendaste en la respuesta anterior?"
+    print(f"\n[Consulta 2 (Con Memoria)]: {query2}")
+    print("\n--- [PROCESANDO TURNO 2] ---")
+    response2 = agent.chat(query2)
+    print("\n--- [RESULTADO 2] ---")
+    print(response2)
     print("==================================================")
-    print("¡TEST COMPLETADO!")
+    print("¡TEST DE MEMORIA COMPLETADO!")
     print("==================================================")
 
 

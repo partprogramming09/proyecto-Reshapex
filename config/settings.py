@@ -14,6 +14,13 @@ DEFAULT_EMBEDDING_DIMENSION: int = 768
 HASH_FILE_NAME: str = ".hash"
 CACHE_TTL_SECONDS: int = 300
 THROTTLE_MIN_INTERVAL: float = 2.0
+MIN_QUERY_INTERVAL: int = 3
+PRESETS: List[str] = [
+    "Tengo un error OCT en mi variador iG5A de 5.5kW al acelerar",
+    "¿Qué variador me recomiendan para reemplazar un iG5A de 2.2kW?",
+    "Mi variador S100 muestra error OVT, ¿qué hago?",
+    "¿Cuáles son las diferencias entre iG5A y H100?",
+]
 
 
 @lru_cache(maxsize=1)

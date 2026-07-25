@@ -1,42 +1,46 @@
 """
 Engine del Agente IA para LS Electric (Hackathon AgentSprint - ReshapeX)
-Respuesta 100% independiente del Modelo LLM sin respuestas predeterminadas en código.
+Carga explícita de .env y generación con el SDK oficial google-genai / google-generativeai.
 """
 
 import os
+from pathlib import Path
 from typing import Dict, Any
 
+# Cargar .env explícitamente desde la raíz del proyecto
 try:
     from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+    env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(dotenv_path=env_path, override=True)
+except Exception as e:
+    print(f"[Warning] Error al cargar .env: {e}")
 
 
 class LSElectricAgentEngine:
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        # Obtener API Key de argumento o de variable de entorno GEMINI_API_KEY
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.client_genai = None
         self.client_generativeai = None
 
         if self.api_key and not self.api_key.startswith("tu_"):
-            # Intentar cargar SDK moderno google-genai
+            # Intentar inicializar SDK moderno google-genai
             try:
                 from google import genai
                 self.client_genai = genai.Client(api_key=self.api_key)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Info] No se pudo inicializar google-genai: {e}")
 
-            # Intentar cargar SDK google-generativeai
+            # Intentar inicializar SDK google-generativeai
             try:
                 import google.generativeai as g_genai
                 g_genai.configure(api_key=self.api_key)
                 self.client_generativeai = g_genai
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Info] No se pudo inicializar google-generativeai: {e}")
 
     def procesar_consulta(self, query: str) -> Dict[str, Any]:
-        """Procesa la consulta del usuario de forma independiente utilizando únicamente el modelo LLM."""
+        """Procesa la consulta del usuario utilizando el modelo de IA de Gemini."""
 
         system_prompt = f"""
         Eres un Ingeniero Experto Senior en Automatización Industrial y Soporte Técnico de LS Electric.
@@ -60,9 +64,9 @@ class LSElectricAgentEngine:
         > *Respuesta generada dinámicamente por el modelo de IA.*
         """
 
-        # 1. Intentar con SDK moderno google-genai
+        # 1. Probar con SDK moderno google-genai
         if self.client_genai:
-            for model_name in ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash']:
+            for model_name in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']:
                 try:
                     response = self.client_genai.models.generate_content(
                         model=model_name,
@@ -74,11 +78,11 @@ class LSElectricAgentEngine:
                             "etapa_3_respuesta_limpia": response.text
                         }
                 except Exception as e:
-                    print(f"[Info] google-genai con modelo {model_name} no disponible: {e}")
+                    print(f"[Info] Error en google-genai ({model_name}): {e}")
 
-        # 2. Intentar con SDK google-generativeai
+        # 2. Probar con SDK google-generativeai
         if self.client_generativeai:
-            for model_name in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp', 'gemini-pro']:
+            for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-pro']:
                 try:
                     model = self.client_generativeai.GenerativeModel(model_name)
                     response = model.generate_content(system_prompt)
@@ -88,13 +92,17 @@ class LSElectricAgentEngine:
                             "etapa_3_respuesta_limpia": response.text
                         }
                 except Exception as e:
-                    print(f"[Info] google-generativeai con modelo {model_name} no disponible: {e}")
+                    print(f"[Info] Error en google-generativeai ({model_name}): {e}")
 
-        # 3. Si no hay API Key o la conexión falla
+        # Si no se pudo obtener respuesta del modelo
         return {
             "query": query,
             "etapa_3_respuesta_limpia": (
-                "⚠️ **No se pudo conectar con la API del modelo de IA**\n\n"
-                "Por favor verifica que la variable `GEMINI_API_KEY` esté configurada correctamente en tu archivo `.env`."
+                "⚠️ **No se pudo autenticar la GEMINI_API_KEY**\n\n"
+                "Asegúrate de colocar tu clave de Google AI Studio (que comienza con `AIzaSy...`) en tu archivo `.env`:\n\n"
+                "```env\n"
+                "GEMINI_API_KEY=AIzaSyTuClaveDeGoogleStudioAqui\n"
+                "```\n\n"
+                "*(Obtén tu clave gratuita en [aistudio.google.com](https://aistudio.google.com/app/apikey))*"
             )
         }

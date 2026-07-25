@@ -25,29 +25,14 @@ def main():
         layout="wide",
     )
 
-    # Sidebar para ingresar Gemini API Key en vivo si no está en .env
+    # Sidebar limpia sin inputs manuales de API Key
     with st.sidebar:
         st.title("⚡ LS Electric AI")
         st.markdown("---")
-        st.subheader("🔑 Configuración de API Key")
-        gemini_input = st.text_input(
-            "Gemini API Key (Google AI Studio)",
-            type="password",
-            help="Ingresa tu clave de Gemini para respuestas 100% independientes en tiempo real",
-        )
-        if gemini_input:
-            os.environ["GEMINI_API_KEY"] = gemini_input
-            st.success("API Key de Gemini configurada 🟢")
-        elif os.getenv("GEMINI_API_KEY") and not os.getenv("GEMINI_API_KEY").startswith("tu_"):
-            st.info("API Key de Gemini detectada desde .env 🟢")
-        else:
-            st.warning("Ingresa una GEMINI_API_KEY para habilitar la generación del modelo en vivo 🟡")
-
-        st.markdown("---")
-        st.caption("ReshapeX AgentSprint 2026")
+        st.caption("AgentSprint Hackathon 2026 · Powered by ReshapeX")
 
     st.title("⚡ LLS Electric AI — Respuestas Independientes del Modelo")
-    st.caption("Asistente IA sin datos predeterminados hardcodeados: Generación directa por el LLM")
+    st.caption("Asistente IA de Automatización Industrial LS Electric")
 
     # Inicializar el agente en caché con tolerancia a fallos
     try:
@@ -60,7 +45,7 @@ def main():
         st.session_state.messages = [
             {
                 "role": "assistant",
-                "content": "¡Hola! Soy el asistente independiente de **LS Electric**. Escribe cualquier duda técnica o consulta sobre equipos de automatización.",
+                "content": "¡Hola! Soy el asistente técnico de **LS Electric**. Escribe cualquier consulta o duda sobre equipos de automatización.",
             }
         ]
 
@@ -70,7 +55,7 @@ def main():
             st.markdown(message["content"])
 
     # Entrada de consulta por parte del usuario
-    if prompt := st.chat_input("Escribe cualquier consulta o parámetro técnico..."):
+    if prompt := st.chat_input("Escribe tu consulta o parámetro técnico..."):
         # Agregar mensaje del usuario al estado y a la UI
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -78,7 +63,7 @@ def main():
 
         # Enviar la consulta al agente y renderizar respuesta
         with st.chat_message("assistant"):
-            with st.spinner("Procesando consulta con el modelo de IA..."):
+            with st.spinner("Consultando modelo de IA..."):
                 try:
                     response_text = agent.chat(prompt)
                 except Exception as e:

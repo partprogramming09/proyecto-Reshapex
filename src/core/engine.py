@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 
 try:
     from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parent / ".env"
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
     load_dotenv(dotenv_path=env_path, override=True)
 except Exception as e:
     print(f"[Warning] Error al cargar .env: {e}")
@@ -60,33 +60,33 @@ class LSElectricAgentEngine:
             time.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _validar_entrada(self, query: str) -> Optional[str]:
+    def _validate_input(self, query: str) -> Optional[str]:
         if not query or not query.strip():
             return "La consulta no puede estar vacía."
         if len(query) > 500:
             return "La consulta excede el límite de 500 caracteres."
         return None
 
-    def _construir_prompt_etapas(self, query: str) -> str:
-        rag_bloque = ""
-        instruccion_rag = ""
+    def _build_stage_prompt(self, query: str) -> str:
+        rag_block = ""
+        rag_instruction = ""
 
         if self._rag_context:
-            rag_bloque = f"\n\n[INFORMACIÓN DE MANUALES Y DOCUMENTACIÓN LS ELECTRIC]:\n{self._rag_context}"
-            instruccion_rag = (
+            rag_block = f"\n\n[INFORMACIÓN DE MANUALES Y DOCUMENTACIÓN LS ELECTRIC]:\n{self._rag_context}"
+            rag_instruction = (
                 "Usa la información de los manuales como FUENTE PRIMARIA de tu respuesta. "
                 "Cita el documento, sección y página cuando sea posible."
             )
         else:
-            instruccion_rag = (
+            rag_instruction = (
                 "Responde con tu conocimiento general sobre automatización industrial y equipos LS Electric. "
                 "Si no tienes información específica, indica qué datos adicionales se necesitan."
             )
 
         prompt = f"""Eres un Ingeniero Experto Senior en Automatización Industrial y Soporte Técnico de LS Electric.
-{rag_bloque}
+{rag_block}
 
-{instruccion_rag}
+{rag_instruction}
 
 Responde en EXACTAMENTE estas 3 etapas:
 
@@ -106,17 +106,17 @@ Consulta del usuario: "{query}"
 """
         return prompt
 
-    def procesar_consulta(self, query: str) -> Dict[str, Any]:
-        error_validacion = self._validar_entrada(query)
-        if error_validacion:
-            return {"query": query, "etapa_3_respuesta_limpia": f"⚠️ {error_validacion}"}
+    def process_query(self, query: str) -> Dict[str, Any]:
+        validation_error = self._validate_input(query)
+        if validation_error:
+            return {"query": query, "clean_response": f"⚠️ {validation_error}"}
 
         cached = self._get_cached(query)
         if cached:
             print("[Cache] Respuesta servida desde caché")
-            return {"query": query, "etapa_3_respuesta_limpia": cached}
+            return {"query": query, "clean_response": cached}
 
-        prompt = self._construir_prompt_etapas(query)
+        prompt = self._build_stage_prompt(query)
 
         if self.client_genai:
             models_to_try = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemma-4-26b-a4b-it']
@@ -131,9 +131,9 @@ Consulta del usuario: "{query}"
                             contents=prompt,
                         )
                         if response and response.text:
-                            respuesta = response.text
-                            self._set_cached(query, respuesta)
-                            return {"query": query, "etapa_3_respuesta_limpia": respuesta}
+                            answer = response.text
+                            self._set_cached(query, answer)
+                            return {"query": query, "clean_response": answer}
                     except Exception as e:
                         error_msg = str(e)
                         print(f"[Info] Error en google-genai ({model_name}, intento {attempt + 1}): {e}")
@@ -159,15 +159,15 @@ Consulta del usuario: "{query}"
                 if errors_by_type["auth"] or errors_by_type["quota"]:
                     break
 
-            return {"query": query, "etapa_3_respuesta_limpia": self._generar_mensaje_error(errors_by_type)}
+            return {"query": query, "clean_response": self._generate_error_message(errors_by_type)}
 
-        return {"query": query, "etapa_3_respuesta_limpia": (
+        return {"query": query, "clean_response": (
             "⚠️ **No se configuró la GEMINI_API_KEY**\n\n"
             "Agrega tu clave en `.env`:\n```env\nGEMINI_API_KEY=tu_clave\n```\n"
             "*(Obtén tu clave en [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey))*"
         )}
 
-    def _generar_mensaje_error(self, errors: dict) -> str:
+    def _generate_error_message(self, errors: dict) -> str:
         if errors["auth"]:
             return (
                 "⚠️ **GEMINI_API_KEY inválida**\n\n"
@@ -193,3 +193,5 @@ Consulta del usuario: "{query}"
             f"⚠️ **Error al conectar con Gemini**\n\nDetalle: {error_str[:200]}\n\n"
             "Verifica tu `.env` y conexión a internet."
         )
+
+

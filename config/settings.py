@@ -1,12 +1,28 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Dict, Any, List
 from dotenv import load_dotenv
 
 
+# Constants
+SUPPORTED_EXTENSIONS: List[str] = [".pdf", ".txt", ".md"]
+DEFAULT_CHUNK_SIZE: int = 1024
+DEFAULT_CHUNK_OVERLAP: int = 20
+DEFAULT_SIMILARITY_TOP_K: int = 4
+DEFAULT_EMBEDDING_DIMENSION: int = 768
+HASH_FILE_NAME: str = ".hash"
+CACHE_TTL_SECONDS: int = 300
+THROTTLE_MIN_INTERVAL: float = 2.0
+
+
 @lru_cache(maxsize=1)
-def get_settings() -> dict:
-    """Carga variables de entorno y define rutas estáticas y modelos para la arquitectura RAG."""
+def get_settings() -> Dict[str, Any]:
+    """Carga variables de entorno y define rutas estáticas y modelos para la arquitectura RAG.
+
+    Returns:
+        Diccionario con toda la configuración del proyecto.
+    """
     root_dir = Path(__file__).resolve().parent.parent
 
     env_path = root_dir / ".env"
@@ -30,8 +46,12 @@ def get_settings() -> dict:
         "gemini_api_key": gemini_api_key,
         "llm_model": "gemini-3.1-flash-lite",
         "embed_model": "gemini-embedding-001",
-        "embedding_dimension": 768,
-        "chunk_size": 1024,
-        "chunk_overlap": 20,
-        "similarity_top_k": 4,
+        "embedding_dimension": DEFAULT_EMBEDDING_DIMENSION,
+        "chunk_size": DEFAULT_CHUNK_SIZE,
+        "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
+        "similarity_top_k": DEFAULT_SIMILARITY_TOP_K,
+        "supported_extensions": SUPPORTED_EXTENSIONS,
+        "hash_file_name": HASH_FILE_NAME,
+        "cache_ttl_seconds": CACHE_TTL_SECONDS,
+        "throttle_min_interval": THROTTLE_MIN_INTERVAL,
     }

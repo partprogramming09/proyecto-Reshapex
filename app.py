@@ -2,15 +2,21 @@ import os
 import sys
 import time
 import re
-import tempfile
+import io
 from pathlib import Path
-
-root_path = Path(__file__).resolve().parent
-if str(root_path) not in sys.path:
-    sys.path.insert(0, str(root_path))
+from typing import List, Dict
 
 import streamlit as st
-from src.core.agent import build_agent, FallbackAgentWrapper
+from pypdf import PdfReader
+
+from config.settings import get_settings, SUPPORTED_EXTENSIONS
+from src.core.agent import FallbackAgentWrapper
+from src.core.agent_factory import AgentFactory
+from src.rag.indexer import (
+    list_documents,
+    has_documents,
+    invalidate_index,
+)
 
 MIN_QUERY_INTERVAL = 3
 
@@ -24,77 +30,102 @@ PRESETS = [
 
 @st.cache_resource
 def get_cached_agent():
-    return build_agent()
+    """Construye y cachea el agente RAG."""
+    return AgentFactory.build_agent()
 
 
-def parsear_etapas(respuesta: str) -> dict:
-    etapas = {"diagnostico": "", "variante": "", "cita": ""}
-    patrones = [
+def parse_stages(response: str) -> Dict[str, str]:
+    """Parsea la respuesta del agente en las 3 etapas.
+
+    Args:
+        response: Respuesta completa del agente.
+
+    Returns:
+        Diccionario con las 3 etapas parseadas.
+    """
+    stages = {"diagnostico": "", "variante": "", "cita": ""}
+    patterns = [
         (r"(?i)etapa\s*1[^:]*:\s*(.*?)(?=etapa\s*2|recomendación|⚙️|$)", "diagnostico"),
         (r"(?i)etapa\s*2[^:]*:\s*(.*?)(?=etapa\s*3|cita|📑|$)", "variante"),
         (r"(?i)(📑.*$)", "cita"),
     ]
-    for patron, clave in patrones:
-        match = re.search(patron, respuesta, re.DOTALL)
+    for pattern, key in patterns:
+        match = re.search(pattern, response, re.DOTALL)
         if match:
-            etapas[clave] = match.group(1).strip()
-    if not etapas["cita"]:
-        match_cita = re.search(r"📑.*", respuesta, re.DOTALL)
+            stages[key] = match.group(1).strip()
+    if not stages["cita"]:
+        match_cita = re.search(r"📑.*", response, re.DOTALL)
         if match_cita:
-            etapas["cita"] = match_cita.group(0).strip()
-    if not any(etapas.values()):
-        partes = respuesta.split("\n\n")
-        if len(partes) >= 3:
-            etapas["diagnostico"] = partes[0]
-            etapas["variante"] = partes[1]
-            etapas["cita"] = "\n\n".join(partes[2:])
-        elif len(partes) == 2:
-            etapas["diagnostico"] = partes[0]
-            etapas["cita"] = partes[1]
+            stages["cita"] = match_cita.group(0).strip()
+    if not any(stages.values()):
+        parts = response.split("\n\n")
+        if len(parts) >= 3:
+            stages["diagnostico"] = parts[0]
+            stages["variante"] = parts[1]
+            stages["cita"] = "\n\n".join(parts[2:])
+        elif len(parts) == 2:
+            stages["diagnostico"] = parts[0]
+            stages["cita"] = parts[1]
         else:
-            etapas["diagnostico"] = respuesta
-    return etapas
+            stages["diagnostico"] = response
+    return stages
 
 
-def extraer_preview_archivo(uploaded_file, lineas=10) -> str:
+def extract_file_preview(uploaded_file, lines: int = 10) -> str:
+    """Extrae preview de un archivo subido.
+
+    Args:
+        uploaded_file: Archivo de Streamlit.
+        lines: Número de líneas a extraer.
+
+    Returns:
+        Preview del archivo como string.
+    """
     try:
         uploaded_file.seek(0)
         if uploaded_file.name.endswith(".pdf"):
-            from pypdf import PdfReader
-            import io
             contenido = uploaded_file.read()
             reader = PdfReader(io.BytesIO(contenido))
-            texto = ""
+            text = ""
             for page in reader.pages[:2]:
-                texto += page.extract_text() or ""
+                text += page.extract_text() or ""
             uploaded_file.seek(0)
-            lineas_texto = texto.strip().split("\n")[:lineas]
-            return "\n".join(lineas_texto)
+            preview_lines = text.strip().split("\n")[:lines]
+            return "\n".join(preview_lines)
         else:
             contenido = uploaded_file.read().decode("utf-8", errors="replace")
             uploaded_file.seek(0)
-            return "\n".join(contenido.split("\n")[:lineas])
+            return "\n".join(contenido.split("\n")[:lines])
     except Exception as e:
         uploaded_file.seek(0)
         return f"(No se pudo extraer preview: {e})"
 
 
-def guardar_archivo(uploaded_file, destino: Path) -> Path:
+def save_file(uploaded_file, destination: Path) -> Path:
+    """Guarda un archivo subido en el destino especificado.
+
+    Args:
+        uploaded_file: Archivo de Streamlit.
+        destination: Directorio destino.
+
+    Returns:
+        Ruta del archivo guardado.
+    """
     uploaded_file.seek(0)
-    filepath = destino / uploaded_file.name
+    filepath = destination / uploaded_file.name
     filepath.write_bytes(uploaded_file.read())
     uploaded_file.seek(0)
     return filepath
 
 
 def main():
+    """Función principal de la aplicación Streamlit."""
     st.set_page_config(
         page_title="LS Electric AI",
         page_icon="⚡",
         layout="wide",
     )
 
-    from config.settings import get_settings
     settings = get_settings()
     data_raw_dir = settings["data_raw_dir"]
     storage_dir = settings["storage_dir"]
@@ -107,12 +138,11 @@ def main():
 
         st.markdown("### 📊 Estado RAG")
         try:
-            from src.rag.indexer import listar_documentos, hay_documentos
-            docs = listar_documentos()
-            if docs:
-                st.success(f"**{len(docs)} documentos** cargados")
+            documents = list_documents()
+            if documents:
+                st.success(f"**{len(documents)} documentos** cargados")
                 with st.expander("Ver documentos"):
-                    for doc in docs:
+                    for doc in documents:
                         st.text(f"• {doc['nombre']} ({doc['tamaño']})")
             else:
                 st.info("Sin documentos cargados")
@@ -133,16 +163,15 @@ def main():
         if uploaded_files:
             for uf in uploaded_files:
                 with st.expander(f"📄 {uf.name} — Preview", expanded=False):
-                    preview = extraer_preview_archivo(uf)
+                    preview = extract_file_preview(uf)
                     st.code(preview, language=None)
 
             if st.button("📤 Subir y Indexar", use_container_width=True):
                 with st.spinner("Guardando y indexando..."):
                     for uf in uploaded_files:
-                        guardar_archivo(uf, data_raw_dir)
+                        save_file(uf, data_raw_dir)
                     try:
-                        from src.rag.indexer import invalidar_indice
-                        invalidar_indice()
+                        invalidate_index()
                         st.cache_resource.clear()
                     except Exception as e:
                         st.error(f"Error al indexar: {e}")
@@ -152,11 +181,10 @@ def main():
         if st.button("🗑️ Limpiar Documentos", use_container_width=True):
             with st.spinner("Limpiando..."):
                 for f in data_raw_dir.iterdir():
-                    if f.is_file() and f.suffix.lower() in (".pdf", ".txt", ".md"):
+                    if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
                         f.unlink()
                 try:
-                    from src.rag.indexer import invalidar_indice
-                    invalidar_indice()
+                    invalidate_index()
                     st.cache_resource.clear()
                 except Exception:
                     pass
@@ -180,8 +208,7 @@ def main():
 
     st.title("⚡ LS Electric AI — Diagnóstico Industrial")
     try:
-        from src.rag.indexer import hay_documentos
-        if hay_documentos():
+        if has_documents():
             st.caption("Modo RAG: respuestas fundamentadas en documentos cargados")
         else:
             st.caption("Modo autónomo: respuestas con conocimiento general de Gemini")
@@ -234,21 +261,21 @@ def main():
                     fallback_agent = FallbackAgentWrapper()
                     response_text = fallback_agent.chat(prompt)
 
-                etapas = parsear_etapas(response_text)
+                stages = parse_stages(response_text)
 
-                if etapas["diagnostico"]:
+                if stages["diagnostico"]:
                     with st.expander("🛠️ Etapa 1: Diagnóstico Técnico", expanded=True):
-                        st.markdown(etapas["diagnostico"])
+                        st.markdown(stages["diagnostico"])
 
-                if etapas["variante"]:
+                if stages["variante"]:
                     with st.expander("⚙️ Etapa 2: Recomendación", expanded=True):
-                        st.markdown(etapas["variante"])
+                        st.markdown(stages["variante"])
 
-                if etapas["cita"]:
+                if stages["cita"]:
                     with st.expander("📑 Etapa 3: Fuente / Cita", expanded=True):
-                        st.markdown(etapas["cita"])
+                        st.markdown(stages["cita"])
 
-                if not any(etapas.values()):
+                if not any(stages.values()):
                     st.markdown(response_text)
 
                 st.session_state.messages.append({"role": "assistant", "content": response_text})

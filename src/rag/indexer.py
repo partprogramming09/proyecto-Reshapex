@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict
 
-from config.settings import get_settings
+from config.settings import get_settings, SUPPORTED_EXTENSIONS, HASH_FILE_NAME
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -16,7 +16,15 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 
 
-def _get_embed_model():
+def _get_embed_model() -> GoogleGenAIEmbedding:
+    """Obtiene el modelo de embeddings de Google Gemini.
+
+    Returns:
+        Instancia de GoogleGenAIEmbedding configurada.
+
+    Raises:
+        ValueError: Si GEMINI_API_KEY no está configurada.
+    """
     settings = get_settings()
     api_key = settings["gemini_api_key"]
     model_name = settings["embed_model"]
@@ -25,30 +33,48 @@ def _get_embed_model():
     return GoogleGenAIEmbedding(model_name=model_name, api_key=api_key)
 
 
-def _hash_archivos(directorio: Path) -> str:
-    archivos = sorted(directorio.glob("*"))
-    contenido = "".join(f"{a.name}:{a.stat().st_size}" for a in archivos if a.is_file())
-    return hashlib.md5(contenido.encode()).hexdigest()
+def _calculate_files_hash(directory: Path) -> str:
+    """Calcula hash MD5 de los archivos en un directorio.
+
+    Args:
+        directory: Directorio a escanear.
+
+    Returns:
+        Hash MD5 como string hexadecimal.
+    """
+    files = sorted(directory.glob("*"))
+    content = "".join(f"{f.name}:{f.stat().st_size}" for f in files if f.is_file())
+    return hashlib.md5(content.encode()).hexdigest()
 
 
-def listar_documentos() -> List[Dict]:
+def list_documents() -> List[Dict[str, str]]:
+    """Lista documentos disponibles en data/raw/.
+
+    Returns:
+        Lista de diccionarios con nombre, tamaño y ruta de cada documento.
+    """
     settings = get_settings()
     data_raw_dir = settings["data_raw_dir"]
-    docs = []
+    documents = []
     for f in sorted(data_raw_dir.iterdir()):
-        if f.is_file() and f.suffix.lower() in (".pdf", ".txt", ".md"):
-            tamaño = f.stat().st_size
-            if tamaño > 1024 * 1024:
-                tamaño_str = f"{tamaño / (1024 * 1024):.1f} MB"
-            elif tamaño > 1024:
-                tamaño_str = f"{tamaño / 1024:.1f} KB"
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
+            file_size = f.stat().st_size
+            if file_size > 1024 * 1024:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            elif file_size > 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
             else:
-                tamaño_str = f"{tamaño} B"
-            docs.append({"nombre": f.name, "tamaño": tamaño_str, "path": str(f)})
-    return docs
+                size_str = f"{file_size} B"
+            documents.append({"nombre": f.name, "tamaño": size_str, "path": str(f)})
+    return documents
 
 
-def contar_paginas() -> int:
+def count_pages() -> int:
+    """Cuenta el número de páginas/fragmentos en el índice persistido.
+
+    Returns:
+        Número de páginas/fragmentos, o 0 si hay error.
+    """
     settings = get_settings()
     storage_dir = settings["storage_dir"]
     try:
@@ -59,7 +85,8 @@ def contar_paginas() -> int:
         return 0
 
 
-def invalidar_indice():
+def invalidate_index() -> None:
+    """Invalida el índice eliminando el directorio de storage."""
     settings = get_settings()
     storage_dir = settings["storage_dir"]
     if storage_dir.exists():
@@ -67,18 +94,28 @@ def invalidar_indice():
         storage_dir.mkdir(parents=True, exist_ok=True)
 
 
-def hay_documentos() -> bool:
+def has_documents() -> bool:
+    """Verifica si hay documentos disponibles en data/raw/.
+
+    Returns:
+        True si hay al menos un documento soportado, False de lo contrario.
+    """
     settings = get_settings()
     data_raw_dir = settings["data_raw_dir"]
     if not data_raw_dir.exists():
         return False
     return any(
-        f.is_file() and f.suffix.lower() in (".pdf", ".txt", ".md")
+        f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
         for f in data_raw_dir.iterdir()
     )
 
 
 def load_or_create_index() -> Optional[VectorStoreIndex]:
+    """Carga índice persistido o crea uno nuevo desde data/raw/.
+
+    Returns:
+        VectorStoreIndex si hay documentos, None si no hay documentos.
+    """
     settings = get_settings()
     data_raw_dir = settings["data_raw_dir"]
     storage_dir = settings["storage_dir"]
@@ -89,49 +126,49 @@ def load_or_create_index() -> Optional[VectorStoreIndex]:
     data_raw_dir.mkdir(parents=True, exist_ok=True)
     storage_dir.mkdir(parents=True, exist_ok=True)
 
-    docs_en_raw = [
+    raw_documents = [
         f for f in data_raw_dir.iterdir()
-        if f.is_file() and f.suffix.lower() in (".pdf", ".txt", ".md")
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
     ]
 
-    if not docs_en_raw:
+    if not raw_documents:
         print("[RAG] No hay documentos en data/raw/. Modo autónomo (solo Gemini).")
         return None
 
-    hash_actual = _hash_archivos(data_raw_dir)
-    hash_file = storage_dir / ".hash"
+    current_hash = _calculate_files_hash(data_raw_dir)
+    hash_file_path = storage_dir / HASH_FILE_NAME
 
-    hash_storage = ""
-    if hash_file.exists():
-        hash_storage = hash_file.read_text().strip()
+    stored_hash = ""
+    if hash_file_path.exists():
+        stored_hash = hash_file_path.read_text().strip()
 
     storage_has_files = any(
         f for f in storage_dir.iterdir()
         if f.is_file() and not f.name.startswith(".")
     )
 
-    if storage_has_files and hash_actual == hash_storage:
+    if storage_has_files and current_hash == stored_hash:
         print("[RAG] Cargando índice persistido...")
         try:
             embed_model = _get_embed_model()
             storage_context = StorageContext.from_defaults(persist_dir=str(storage_dir))
             index = load_index_from_storage(storage_context, embed_model=embed_model)
-            print(f"[RAG] Índice cargado: {len(docs_en_raw)} documentos")
+            print(f"[RAG] Índice cargado: {len(raw_documents)} documentos")
             return index
         except Exception as e:
             print(f"[RAG] Error cargando índice, regenerando: {e}")
-            invalidar_indice()
+            invalidate_index()
 
-    print(f"[RAG] Indexando {len(docs_en_raw)} documentos...")
+    print(f"[RAG] Indexando {len(raw_documents)} documentos...")
     try:
         embed_model = _get_embed_model()
         documents = SimpleDirectoryReader(
             input_dir=str(data_raw_dir),
-            required_exts=[".pdf", ".txt", ".md"],
+            required_exts=SUPPORTED_EXTENSIONS,
         ).load_data()
 
-        num_docs = len(documents)
-        print(f"[RAG] {num_docs} páginas/fragmentos extraídos")
+        document_count = len(documents)
+        print(f"[RAG] {document_count} páginas/fragmentos extraídos")
 
         splitter = SentenceSplitter(
             chunk_size=settings["chunk_size"],
@@ -144,7 +181,7 @@ def load_or_create_index() -> Optional[VectorStoreIndex]:
         )
         index.storage_context.persist(persist_dir=str(storage_dir))
 
-        hash_file.write_text(hash_actual)
+        hash_file_path.write_text(current_hash)
         print(f"[RAG] Índice persistido correctamente")
         return index
 

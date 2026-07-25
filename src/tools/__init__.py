@@ -1,3 +1,11 @@
-from .rag_tools import get_lls_knowledge_tool
+from .rag_tools import (
+    get_knowledge_tool,
+    get_web_search_tool,
+    search_ls_electric_website,
+)
 
-__all__ = ["get_lls_knowledge_tool"]
+__all__ = [
+    "get_knowledge_tool",
+    "get_web_search_tool",
+    "search_ls_electric_website",
+]

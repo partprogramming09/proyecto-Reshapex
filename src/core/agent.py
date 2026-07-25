@@ -22,43 +22,51 @@ class FallbackAgentWrapper:
 
 
 def build_agent():
-    """Construye e inicializa el Agente RAG para LS Electric con soporte inteligente para OpenAI y Gemini."""
-    settings = get_settings()
-    openai_key = settings.get("openai_api_key", "")
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    """Construye e inicializa el Agente RAG para LS Electric.
+    Si la clave de OpenAI es inválida (401), sin saldo (429) o no funciona,
+    retorna automáticamente el FallbackAgentWrapper sin lanzar excepciones.
+    """
+    try:
+        settings = get_settings()
+        openai_key = settings.get("openai_api_key", "")
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
 
-    # Intentar usar OpenAI si hay una clave configurada que parece válida
-    if openai_key and openai_key.startswith("sk-"):
-        try:
-            from src.tools.rag_tools import get_lls_knowledge_tool
-            from llama_index.core import Settings
-            from llama_index.core.agent import ReActAgent
-            from llama_index.llms.openai import OpenAI
-            from llama_index.embeddings.openai import OpenAIEmbedding
+        # Intentar usar OpenAI solo si hay una clave configurada
+        if openai_key and openai_key.startswith("sk-"):
+            try:
+                from src.tools.rag_tools import get_lls_knowledge_tool
+                from llama_index.core import Settings
+                from llama_index.core.agent import ReActAgent
+                from llama_index.llms.openai import OpenAI
+                from llama_index.embeddings.openai import OpenAIEmbedding
 
-            llm = OpenAI(
-                model=settings["llm_model"],
-                api_key=openai_key,
-                temperature=0.1,
-            )
-            embed_model = OpenAIEmbedding(
-                model_name=settings["embed_model"],
-                api_key=openai_key,
-            )
+                llm = OpenAI(
+                    model=settings["llm_model"],
+                    api_key=openai_key,
+                    temperature=0.1,
+                )
+                embed_model = OpenAIEmbedding(
+                    model_name=settings["embed_model"],
+                    api_key=openai_key,
+                )
 
-            Settings.llm = llm
-            Settings.embed_model = embed_model
+                Settings.llm = llm
+                Settings.embed_model = embed_model
 
-            knowledge_tool = get_lls_knowledge_tool()
+                knowledge_tool = get_lls_knowledge_tool()
 
-            agent = ReActAgent.from_tools(
-                tools=[knowledge_tool],
-                llm=llm,
-                verbose=True,
-            )
-            return agent
-        except Exception as e:
-            print(f"[Info] Transicionando a engine Gemini/LS Electric por error de OpenAI ({e})")
+                agent = ReActAgent.from_tools(
+                    tools=[knowledge_tool],
+                    llm=llm,
+                    verbose=True,
+                )
+                return agent
+            except Exception as e:
+                print(f"[Info] Error al inicializar OpenAI ({e}). Usando motor Fallback de Gemini.")
+                return FallbackAgentWrapper(api_key=gemini_key)
 
-    # Fallback automático a Gemini / Engine Oficial LS Electric (100% Gratis sin Tarjeta)
-    return FallbackAgentWrapper(api_key=gemini_key)
+        return FallbackAgentWrapper(api_key=gemini_key)
+    except Exception as general_error:
+        print(f"[Warning] Error general en build_agent ({general_error}). Usando motor Fallback por defecto.")
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        return FallbackAgentWrapper(api_key=gemini_key)

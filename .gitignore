@@ -1,0 +1,14 @@
+# Entorno y Secretos (IMPORTANTE para Hackathon / Jurados)
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de trabajo temporal
+scratch/
+.idea/
+.vscode/

@@ -2,7 +2,6 @@ import os
 import sys
 from pathlib import Path
 
-# Asegurar la ruta raíz en sys.path
 root_path = Path(__file__).resolve().parent.parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
@@ -11,20 +10,59 @@ from config.settings import get_settings
 
 
 class FallbackAgentWrapper:
-    """Wrapper compatible con la interfaz agent.chat() que utiliza el engine LSElectricAgentEngine."""
+    """Wrapper que usa LSElectricAgentEngine con contexto RAG opcional."""
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self._rag_context = None
+        self._rag_loaded = False
+
+    def _cargar_rag_context(self):
+        if self._rag_loaded:
+            return self._rag_context
+        self._rag_loaded = True
+        try:
+            from src.rag.indexer import load_or_create_index, hay_documentos
+            if not hay_documentos():
+                print("[RAG] Sin documentos. Modo autónomo.")
+                self._rag_context = False
+                return False
+            index = load_or_create_index()
+            if index is None:
+                self._rag_context = False
+                return False
+            query_engine = index.as_query_engine(similarity_top_k=5)
+            self._rag_context = query_engine
+            return self._rag_context
+        except Exception as e:
+            print(f"[Info] No se pudo cargar RAG: {e}")
+            self._rag_context = False
+            return False
 
     def chat(self, message: str) -> str:
+        rag = self._cargar_rag_context()
+        rag_contexto = ""
+
+        if rag:
+            try:
+                respuesta_rag = rag.query(message)
+                if respuesta_rag and str(respuesta_rag).strip():
+                    rag_contexto = f"\n\n[CONOCIMIENTO DE MANUALES LS ELECTRIC]:\n{respuesta_rag}"
+            except Exception as e:
+                print(f"[Info] Error en consulta RAG: {e}")
+
         from agent_engine import LSElectricAgentEngine
         engine = LSElectricAgentEngine(api_key=self.api_key)
+
+        if rag_contexto:
+            engine._rag_context = rag_contexto
+
         res = engine.procesar_consulta(message)
         return res["etapa_3_respuesta_limpia"]
 
 
 def build_agent():
-    """Construye e inicializa el Agente RAG para LS Electric usando Google Gemini."""
+    """Construye el Agente RAG para LS Electric usando Google Gemini."""
     try:
         settings = get_settings()
         gemini_key = settings.get("gemini_api_key", "")

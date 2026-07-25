@@ -12,3 +12,7 @@ __pycache__/
 scratch/
 .idea/
 .vscode/
+
+# Datos generados
+data/storage/
+*.log

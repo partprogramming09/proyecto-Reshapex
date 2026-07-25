@@ -90,12 +90,20 @@ def build_agent():
 
                 knowledge_tool = get_lls_knowledge_tool()
 
-                agent = ReActAgent.from_tools(
-                    tools=[knowledge_tool],
-                    llm=llm,
-                    verbose=True,
-                )
-                return agent
+                tools = []
+                if knowledge_tool:
+                    tools.append(knowledge_tool)
+
+                if tools:
+                    agent = ReActAgent.from_tools(
+                        tools=tools,
+                        llm=llm,
+                        verbose=True,
+                    )
+                    return agent
+                else:
+                    print("[Info] Sin herramientas RAG. Usando FallbackAgentWrapper.")
+                    return FallbackAgentWrapper(api_key=gemini_key)
             except Exception as e:
                 print(f"[Info] Transicionando a motor Fallback por error: {e}")
                 return FallbackAgentWrapper(api_key=gemini_key)

@@ -5,23 +5,30 @@ root_path = Path(__file__).resolve().parent.parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-from src.rag.indexer import load_or_create_index
+from config.settings import get_settings
+from src.rag.indexer import load_or_create_index, hay_documentos
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 
 
-def get_lls_knowledge_tool() -> QueryEngineTool:
-    """Instancia y retorna la herramienta RAG QueryEngineTool para buscar en la base de conocimiento LLS Electric."""
+def get_lls_knowledge_tool():
+    """Herramienta RAG: Consulta base de conocimiento de LS Electric."""
+    if not hay_documentos():
+        return None
+
     index = load_or_create_index()
-    query_engine = index.as_query_engine(similarity_top_k=3)
+    if index is None:
+        return None
+
+    query_engine = index.as_query_engine(similarity_top_k=5)
 
     return QueryEngineTool(
         query_engine=query_engine,
         metadata=ToolMetadata(
             name="base_conocimiento_lls",
             description=(
-                "Utilizar esta herramienta para consultar manuales técnicos, "
-                "códigos de error (OCT, OVT, ETH, NTC), causas probables, soluciones "
-                "y catálogos de equivalencias de equipos de automatización LLS Electric / LS Electric."
+                "Consultar manuales técnicos de LS Electric. "
+                "Códigos de error (OCT, OVT, ETH, NTC), causas, soluciones, "
+                "catálogos de migración iG5A a S100/H100, especificaciones técnicas."
             ),
         ),
     )

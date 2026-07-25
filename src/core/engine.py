@@ -7,7 +7,6 @@ Funciona de manera autónoma (Gemini) o con contexto RAG (PDFs del usuario).
 import os
 import time
 import hashlib
-import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -19,14 +18,70 @@ except Exception as e:
     print(f"[Warning] Error al cargar .env: {e}")
 
 
+class RateLimiterService:
+    """Servicio desacoplado para control de tasa de solicitudes (SRP)."""
+
+    def __init__(self, min_interval_seconds: float = 2.0):
+        self.min_interval = min_interval_seconds
+        self._last_request_time: float = 0
+
+    def throttle(self) -> None:
+        """Asegura un tiempo mínimo de espera entre solicitudes."""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self.min_interval:
+            time.sleep(self.min_interval - elapsed)
+        self._last_request_time = time.time()
+
+
+class ResponseCacheService:
+    """Servicio desacoplado de almacenamiento en caché en memoria (SRP)."""
+
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 50):
+        self.ttl_seconds = ttl_seconds
+        self.max_size = max_size
+        self._store: Dict[str, Dict[str, Any]] = {}
+
+    def generate_key(self, query: str) -> str:
+        """Genera hash MD5 de la consulta para usar como clave."""
+        return hashlib.md5(query.strip().lower().encode()).hexdigest()
+
+    def get(self, query: str) -> Optional[str]:
+        """Obtiene la respuesta cacheada si aún es válida por TTL."""
+        key = self.generate_key(query)
+        entry = self._store.get(key)
+        if entry and (time.time() - entry["ts"]) < self.ttl_seconds:
+            return entry["response"]
+        if entry:
+            del self._store[key]
+        return None
+
+    def set(self, query: str, response: str) -> None:
+        """Almacena una respuesta en la caché limitando el tamaño máximo."""
+        key = self.generate_key(query)
+        self._store[key] = {"response": response, "ts": time.time()}
+        if len(self._store) > self.max_size:
+            oldest_key = min(self._store, key=lambda k: self._store[k]["ts"])
+            del self._store[oldest_key]
+
+
 class LSElectricAgentEngine:
-    def __init__(self, api_key: str = None):
+    """Engine principal del Agente IA de LS Electric aplicando 3 etapas secuenciales."""
+
+    MAX_QUERY_LENGTH: int = 4000
+    FALLBACK_MODELS = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemma-4-26b-a4b-it",
+    ]
+
+    def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.client_genai = None
-        self._cache: Dict[str, Dict[str, Any]] = {}
-        self._last_request_time: float = 0
-        self._min_interval: float = 2.0
         self._rag_context: Optional[str] = None
+
+        # Servicios desacoplados (SRP)
+        self.rate_limiter = RateLimiterService(min_interval_seconds=2.0)
+        self.cache_service = ResponseCacheService(ttl_seconds=300, max_size=50)
 
         if self.api_key and not self.api_key.startswith("tu_"):
             try:
@@ -36,35 +91,26 @@ class LSElectricAgentEngine:
                 print(f"[Info] No se pudo inicializar google-genai: {e}")
 
     def _cache_key(self, query: str) -> str:
-        return hashlib.md5(query.strip().lower().encode()).hexdigest()
+        """Compatibilidad retrospectiva para clave de caché."""
+        return self.cache_service.generate_key(query)
 
     def _get_cached(self, query: str) -> Optional[str]:
-        key = self._cache_key(query)
-        entry = self._cache.get(key)
-        if entry and (time.time() - entry["ts"]) < 300:
-            return entry["response"]
-        if entry:
-            del self._cache[key]
-        return None
+        """Compatibilidad retrospectiva para obtener caché."""
+        return self.cache_service.get(query)
 
-    def _set_cached(self, query: str, response: str):
-        key = self._cache_key(query)
-        self._cache[key] = {"response": response, "ts": time.time()}
-        if len(self._cache) > 50:
-            oldest = min(self._cache, key=lambda k: self._cache[k]["ts"])
-            del self._cache[oldest]
+    def _set_cached(self, query: str, response: str) -> None:
+        """Compatibilidad retrospectiva para guardar caché."""
+        self.cache_service.set(query, response)
 
-    def _throttle(self):
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
+    def _throttle(self) -> None:
+        """Compatibilidad retrospectiva para throttling."""
+        self.rate_limiter.throttle()
 
     def _validate_input(self, query: str) -> Optional[str]:
         if not query or not query.strip():
             return "La consulta no puede estar vacía."
-        if len(query) > 4000:
-            return "La consulta excede el límite de 4000 caracteres."
+        if len(query) > self.MAX_QUERY_LENGTH:
+            return f"La consulta excede el límite de {self.MAX_QUERY_LENGTH} caracteres."
         return None
 
     def _build_stage_prompt(self, query: str) -> str:
@@ -111,7 +157,7 @@ Consulta del usuario: "{query}"
         if validation_error:
             return {"query": query, "clean_response": f"⚠️ {validation_error}"}
 
-        cached = self._get_cached(query)
+        cached = self.cache_service.get(query)
         if cached:
             print("[Cache] Respuesta servida desde caché")
             return {"query": query, "clean_response": cached}
@@ -119,20 +165,19 @@ Consulta del usuario: "{query}"
         prompt = self._build_stage_prompt(query)
 
         if self.client_genai:
-            models_to_try = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemma-4-26b-a4b-it']
             errors_by_type = {"auth": None, "quota": None, "not_found": None, "other": None}
 
-            for model_name in models_to_try:
+            for model_name in self.FALLBACK_MODELS:
                 for attempt in range(2):
                     try:
-                        self._throttle()
+                        self.rate_limiter.throttle()
                         response = self.client_genai.models.generate_content(
                             model=model_name,
                             contents=prompt,
                         )
                         if response and response.text:
                             answer = response.text
-                            self._set_cached(query, answer)
+                            self.cache_service.set(query, answer)
                             return {"query": query, "clean_response": answer}
                     except Exception as e:
                         error_msg = str(e)
@@ -193,5 +238,3 @@ Consulta del usuario: "{query}"
             f"⚠️ **Error al conectar con Gemini**\n\nDetalle: {error_str[:200]}\n\n"
             "Verifica tu `.env` y conexión a internet."
         )
-
-

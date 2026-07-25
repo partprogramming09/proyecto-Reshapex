@@ -1,15 +1,38 @@
 import re
 from typing import Dict
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class DiagnosticReport:
+    """Value Object que representa un reporte de diagnóstico procesado en 3 etapas."""
+
+    diagnostico: str = ""
+    variante: str = ""
+    cita: str = ""
+
+    @property
+    def has_stages(self) -> bool:
+        """Retorna True si al menos una etapa fue identificada."""
+        return bool(self.diagnostico or self.variante or self.cita)
+
+    def to_dict(self) -> Dict[str, str]:
+        """Convierte el objeto a diccionario para compatibilidad de interfaz."""
+        return {
+            "diagnostico": self.diagnostico,
+            "variante": self.variante,
+            "cita": self.cita,
+        }
 
 
 def parse_stages(response: str) -> Dict[str, str]:
-    """Parsea la respuesta del agente en las 3 etapas.
+    """Parsea la respuesta del agente en las 3 etapas predefinidas.
 
     Args:
         response: Respuesta completa del agente.
 
     Returns:
-        Diccionario con las 3 etapas parseadas.
+        Diccionario con las 3 etapas parseadas ("diagnostico", "variante", "cita").
     """
     stages = {"diagnostico": "", "variante": "", "cita": ""}
     patterns = [
@@ -36,4 +59,10 @@ def parse_stages(response: str) -> Dict[str, str]:
             stages["cita"] = parts[1]
         else:
             stages["diagnostico"] = response
-    return stages
+
+    report = DiagnosticReport(
+        diagnostico=stages["diagnostico"],
+        variante=stages["variante"],
+        cita=stages["cita"],
+    )
+    return report.to_dict()

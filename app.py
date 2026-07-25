@@ -3,6 +3,7 @@ import streamlit as st
 from config.settings import get_settings
 from src.core.agent import FallbackAgentWrapper
 from src.core.agent_factory import AgentFactory
+from ui.theme import apply_custom_theme
 from ui.sidebar import render_sidebar
 from ui.chat import render_chat
 
@@ -14,12 +15,16 @@ def get_cached_agent():
 
 
 def main():
-    """Funcion principal de la aplicacion Streamlit."""
+    """Función principal de la aplicación Streamlit."""
     st.set_page_config(
-        page_title="LS Electric AI",
+        page_title="LS Electric AI — Diagnóstico Industrial",
         page_icon="⚡",
         layout="wide",
+        initial_sidebar_state="expanded",
     )
+
+    # Inyección del tema visual personalizado (Dark Mode + LS Gold)
+    apply_custom_theme()
 
     settings = get_settings()
     settings["data_raw_dir"].mkdir(parents=True, exist_ok=True)
@@ -28,7 +33,8 @@ def main():
 
     try:
         agent = get_cached_agent()
-    except Exception:
+    except Exception as e:
+        print(f"[Info] Error al cargar agente cacheado: {e}")
         agent = FallbackAgentWrapper()
 
     render_chat(agent)

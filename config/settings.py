@@ -25,13 +25,13 @@ def get_settings() -> dict:
     data_raw_dir.mkdir(parents=True, exist_ok=True)
     storage_dir.mkdir(parents=True, exist_ok=True)
 
-    openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 
     return {
         "root_dir": root_dir,
         "data_raw_dir": data_raw_dir,
         "storage_dir": storage_dir,
-        "openai_api_key": openai_api_key,
-        "llm_model": "gpt-4o-mini",
-        "embed_model": "text-embedding-3-small",
+        "gemini_api_key": gemini_api_key,
+        "llm_model": "gemini-2.5-flash",
+        "embed_model": "gemini-embedding-001",
     }

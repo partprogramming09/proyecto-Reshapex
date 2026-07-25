@@ -24,32 +24,27 @@ class FallbackAgentWrapper:
 
 
 def build_agent():
-    """Construye e inicializa el Agente RAG para LS Electric.
-    Si OpenAI no está disponible o falla por cualquier razón,
-    retorna automáticamente un FallbackAgentWrapper funcional.
-    """
+    """Construye e inicializa el Agente RAG para LS Electric usando Google Gemini."""
     try:
         settings = get_settings()
-        openai_key = settings.get("openai_api_key", "")
-        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        gemini_key = settings.get("gemini_api_key", "")
 
-        # Intentar usar OpenAI solo si hay una clave configurada que empieza por sk-
-        if openai_key and openai_key.startswith("sk-"):
+        if gemini_key:
             try:
                 from src.tools.rag_tools import get_lls_knowledge_tool
                 from llama_index.core import Settings
                 from llama_index.core.agent import ReActAgent
-                from llama_index.llms.openai import OpenAI
-                from llama_index.embeddings.openai import OpenAIEmbedding
+                from llama_index.llms.google_genai import GoogleGenAI
+                from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 
-                llm = OpenAI(
+                llm = GoogleGenAI(
                     model=settings["llm_model"],
-                    api_key=openai_key,
+                    api_key=gemini_key,
                     temperature=0.1,
                 )
-                embed_model = OpenAIEmbedding(
+                embed_model = GoogleGenAIEmbedding(
                     model_name=settings["embed_model"],
-                    api_key=openai_key,
+                    api_key=gemini_key,
                 )
 
                 Settings.llm = llm
@@ -64,7 +59,7 @@ def build_agent():
                 )
                 return agent
             except Exception as e:
-                print(f"[Info] Transicionando a motor Fallback de Gemini por error en OpenAI: {e}")
+                print(f"[Info] Transicionando a motor Fallback por error: {e}")
                 return FallbackAgentWrapper(api_key=gemini_key)
 
         return FallbackAgentWrapper(api_key=gemini_key)

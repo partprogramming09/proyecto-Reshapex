@@ -21,47 +21,25 @@ class LSElectricAgentEngine:
         # Obtener API Key de argumento o de variable de entorno GEMINI_API_KEY
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.client_genai = None
-        self.client_generativeai = None
 
         if self.api_key and not self.api_key.startswith("tu_"):
-            # Intentar inicializar SDK moderno google-genai
             try:
                 from google import genai
                 self.client_genai = genai.Client(api_key=self.api_key)
             except Exception as e:
                 print(f"[Info] No se pudo inicializar google-genai: {e}")
 
-            # Intentar inicializar SDK google-generativeai
-            try:
-                import google.generativeai as g_genai
-                g_genai.configure(api_key=self.api_key)
-                self.client_generativeai = g_genai
-            except Exception as e:
-                print(f"[Info] No se pudo inicializar google-generativeai: {e}")
-
     def procesar_consulta(self, query: str) -> Dict[str, Any]:
         """Procesa la consulta del usuario utilizando el modelo de IA de Gemini."""
 
         system_prompt = f"""
         Eres un Ingeniero Experto Senior en Automatización Industrial y Soporte Técnico de LS Electric.
-        Responde a la siguiente consulta del usuario de manera 100% independiente, clara, precisa y técnica:
+        Responde de forma natural, clara y directa. Usa lenguaje técnico cuando sea necesario pero sin ser robotsco.
+        Si te preguntan por un código de falla (OCT, OVT, ETH, NTC, etc.), explica la causa y la solución.
+        Si te preguntan por un modelo o variante, recomienda el más adecuado.
+        Puedes usar formato Markdown solo cuando realmente aporte claridad (listas, negritas, código), pero no fuerces encabezados ni secciones rígidas.
 
-        Consulta del Usuario: "{query}"
-
-        FORMATO OBLIGATORIO DE RESPUESTA EN MARKDOWN:
-        ### 🛠️ Diagnóstico Técnico LS Electric
-        [Explicación técnica detallada y pasos de solución recomendados directamente para la consulta]
-
-        ---
-
-        ### ⚙️ Recomendación de Variante y Reemplazo de Equipo
-        [Sugerencias de modelos o variantes de LS Electric aplicables a la consulta]
-
-        ---
-
-        ### 📑 Cita Oficial y Referencia Técnica
-        > **Referencia:** Documentación y Especificaciones Oficiales de LS Electric  
-        > *Respuesta generada dinámicamente por el modelo de IA.*
+        Consulta del usuario: "{query}"
         """
 
         # 1. Probar con SDK moderno google-genai
@@ -79,20 +57,6 @@ class LSElectricAgentEngine:
                         }
                 except Exception as e:
                     print(f"[Info] Error en google-genai ({model_name}): {e}")
-
-        # 2. Probar con SDK google-generativeai
-        if self.client_generativeai:
-            for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-pro']:
-                try:
-                    model = self.client_generativeai.GenerativeModel(model_name)
-                    response = model.generate_content(system_prompt)
-                    if response and response.text:
-                        return {
-                            "query": query,
-                            "etapa_3_respuesta_limpia": response.text
-                        }
-                except Exception as e:
-                    print(f"[Info] Error en google-generativeai ({model_name}): {e}")
 
         # Si no se pudo obtener respuesta del modelo
         return {

@@ -7,7 +7,7 @@ if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
 import streamlit as st
-from src.core.agent import build_agent
+from src.core.agent import build_agent, FallbackAgentWrapper
 
 
 @st.cache_resource
@@ -31,9 +31,7 @@ def main():
     try:
         agent = get_cached_agent()
     except Exception as e:
-        from src.core.agent import FallbackAgentWrapper
         agent = FallbackAgentWrapper()
-
 
     # Inicialización del historial de chat en session_state
     if "messages" not in st.session_state:
@@ -63,14 +61,11 @@ def main():
                     response = agent.chat(prompt)
                     response_text = str(response)
                 except Exception as e:
-                    # Si OpenAI o el RAG falla por cuota (429), usar el engine de fallback de Gemini/LS Electric
-                    from src.core.agent import FallbackAgentWrapper
                     fallback_agent = FallbackAgentWrapper()
                     response_text = fallback_agent.chat(prompt)
 
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "assistant", "content": response_text})
-
 
 
 if __name__ == "__main__":

@@ -1,3 +1,3 @@
-from .agent import build_agent
+from .agent import build_agent, FallbackAgentWrapper
 
-__all__ = ["build_agent"]
+__all__ = ["build_agent", "FallbackAgentWrapper"]

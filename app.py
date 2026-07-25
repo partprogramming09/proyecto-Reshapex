@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from src.core.agent import build_agent, FallbackAgentWrapper
 
 @st.cache_resource
 def get_cached_agent():
-    """Inicializa y almacena en caché el ReActAgent para evitar reiniciar el estado en cada interacción."""
+    """Inicializa y almacena en caché el Agente para evitar reiniciar el estado en cada interacción."""
     return build_agent()
 
 
@@ -24,8 +25,29 @@ def main():
         layout="wide",
     )
 
-    st.title("⚡ LLS Electric AI — Asistente RAG Modular")
-    st.caption("Sistema de Asistencia Técnica RAG con ReActAgent y LlamaIndex para LLS Electric")
+    # Sidebar para ingresar Gemini API Key en vivo si no está en .env
+    with st.sidebar:
+        st.title("⚡ LS Electric AI")
+        st.markdown("---")
+        st.subheader("🔑 Configuración de API Key")
+        gemini_input = st.text_input(
+            "Gemini API Key (Google AI Studio)",
+            type="password",
+            help="Ingresa tu clave de Gemini para respuestas 100% independientes en tiempo real",
+        )
+        if gemini_input:
+            os.environ["GEMINI_API_KEY"] = gemini_input
+            st.success("API Key de Gemini configurada 🟢")
+        elif os.getenv("GEMINI_API_KEY") and not os.getenv("GEMINI_API_KEY").startswith("tu_"):
+            st.info("API Key de Gemini detectada desde .env 🟢")
+        else:
+            st.warning("Ingresa una GEMINI_API_KEY para habilitar la generación del modelo en vivo 🟡")
+
+        st.markdown("---")
+        st.caption("ReshapeX AgentSprint 2026")
+
+    st.title("⚡ LLS Electric AI — Respuestas Independientes del Modelo")
+    st.caption("Asistente IA sin datos predeterminados hardcodeados: Generación directa por el LLM")
 
     # Inicializar el agente en caché con tolerancia a fallos
     try:
@@ -38,7 +60,7 @@ def main():
         st.session_state.messages = [
             {
                 "role": "assistant",
-                "content": "¡Hola! Soy el asistente técnico oficial de **LLS Electric**. ¿En qué puedo ayudarte hoy sobre variadores, códigos de error o equivalencias de catálogo?",
+                "content": "¡Hola! Soy el asistente independiente de **LS Electric**. Escribe cualquier duda técnica o consulta sobre equipos de automatización.",
             }
         ]
 
@@ -48,7 +70,7 @@ def main():
             st.markdown(message["content"])
 
     # Entrada de consulta por parte del usuario
-    if prompt := st.chat_input("Consulta manuales técnicos, fallas (OCT, OVT, ETH, NTC) o reemplazos..."):
+    if prompt := st.chat_input("Escribe cualquier consulta o parámetro técnico..."):
         # Agregar mensaje del usuario al estado y a la UI
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -56,10 +78,9 @@ def main():
 
         # Enviar la consulta al agente y renderizar respuesta
         with st.chat_message("assistant"):
-            with st.spinner("Consultando la base de conocimiento LLS Electric..."):
+            with st.spinner("Procesando consulta con el modelo de IA..."):
                 try:
-                    response = agent.chat(prompt)
-                    response_text = str(response)
+                    response_text = agent.chat(prompt)
                 except Exception as e:
                     fallback_agent = FallbackAgentWrapper()
                     response_text = fallback_agent.chat(prompt)

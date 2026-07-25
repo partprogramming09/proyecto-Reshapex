@@ -1,0 +1,34 @@
+===================================================================
+MANUAL TÉCNICO OFICIAL DE AUTOMATIZACIÓN Y VARIADORES LS ELECTRIC
+===================================================================
+
+1. SERIE iG5A (Variador Estándar Compacto - Descontinuado/Obsoleto)
+- Modelo SV055iG5A-4: 5.5kW / 7.5HP, 400V Trifásico. Reemplazo directo: LSLV0055S100-4NNFN (Serie S100).
+- Modelo SV022iG5A-2: 2.2kW / 3HP, 220V Trifásico. Reemplazo directo: LSLV0022S100-2NNFN (Serie S100) o M100 Micro.
+- Modelo SV008iG5A-4: 0.75kW / 1HP, 400V Trifásico. Reemplazo directo: LSLV0008S100-4NNFN (Serie S100) o G100.
+
+2. CÓDIGOS DE FALLA Y TRIP EN VARIADORES LS ELECTRIC:
+- OCT (Overcurrent Trip): Sobrecorriente durante aceleración o velocidad constante.
+  * Causa: Carga mecánica bloqueada, tiempo de aceleración demasiado corto, cortocircuito en salida U/V/W.
+  * Solución: Aumentar el parámetro ACC (tiempo de aceleración), verificar aislamiento del motor con megóhmetro, revisar freno mecánico.
+  * Origen: Manual de Usuario LS Electric Series iG5A / S100, Capítulo 8, Página 142.
+
+- OVT (Overvoltage Trip): Sobrevoltaje en bus DC durante desaceleración.
+  * Causa: Inercia de carga regenerativa alta, tiempo dEC corto.
+  * Solución: Aumentar parámetro dEC (desaceleración), instalar unidad de freno dinámico (DBU) y resistencia de frenado.
+  * Origen: Manual de Usuario LS Electric Series S100 / H100, Capítulo 8, Página 145.
+
+- ETH (Electronic Thermal Relay Trip): Sobrecarga térmica del motor.
+  * Causa: Motor operando por encima de la corriente nominal por tiempo prolongado.
+  * Solución: Reducir carga mecánica, ajustar parámetro ETH a la corriente nominal de placa del motor.
+  * Origen: Manual de Usuario LS Electric iG5A, Capítulo 7, Página 118.
+
+- NTC / OHt (Overheat Trip): Sobrecalentamiento del disipador de calor.
+  * Causa: Ventilador bloqueado o dañado, temperatura ambiental > 50°C.
+  * Solución: Limpiar disipador térmico, reemplazar ventilador de enfriamiento, asegurar espacio libre de 10cm arriba/abajo.
+  * Origen: Manual de Instalación LS Electric Series S100, Capítulo 9, Página 160.
+
+3. VENTAJAS DE LA MIGRACIÓN A SERIE S100 / H100:
+- Filtro EMC C3 incorporado de fábrica.
+- Comunicación Modbus RTU / CANopen integrada.
+- Montaje Zero-Stacking (rellano a rellano) y diseño 30% más compacto.

@@ -2,12 +2,12 @@ import os
 import sys
 from pathlib import Path
 
-# Asegurar la ruta raíz en sys.path
 root_path = Path(__file__).resolve().parent.parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
 from config.settings import get_settings
+from src.core.prompts import SYSTEM_PROMPT_AGENT
 
 
 class FallbackAgentWrapper:
@@ -24,14 +24,14 @@ class FallbackAgentWrapper:
 
 
 def build_agent():
-    """Construye e inicializa el Agente RAG para LS Electric usando Google Gemini."""
+    """Construye el Agente RAG con prioridad a data local y web como complemento."""
     try:
         settings = get_settings()
         gemini_key = settings.get("gemini_api_key", "")
 
         if gemini_key:
             try:
-                from src.tools.rag_tools import get_lls_knowledge_tool
+                from src.tools.rag_tools import get_lls_knowledge_tool, get_web_search_tool
                 from llama_index.core import Settings
                 from llama_index.core.agent import ReActAgent
                 from llama_index.llms.google_genai import GoogleGenAI
@@ -51,11 +51,13 @@ def build_agent():
                 Settings.embed_model = embed_model
 
                 knowledge_tool = get_lls_knowledge_tool()
+                web_tool = get_web_search_tool()
 
                 agent = ReActAgent.from_tools(
-                    tools=[knowledge_tool],
+                    tools=[knowledge_tool, web_tool],
                     llm=llm,
                     verbose=True,
+                    system_prompt=SYSTEM_PROMPT_AGENT,
                 )
                 return agent
             except Exception as e:

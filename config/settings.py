@@ -32,6 +32,9 @@ def get_settings() -> dict:
         "data_raw_dir": data_raw_dir,
         "storage_dir": storage_dir,
         "gemini_api_key": gemini_api_key,
-        "llm_model": "gemini-2.5-flash",
+        "llm_model": "gemini-3.1-flash-lite",
         "embed_model": "gemini-embedding-001",
+        "chunk_size": 1024,
+        "chunk_overlap": 20,
+        "similarity_top_k": 4,
     }

@@ -203,15 +203,17 @@ class LSElectricAgentEngine:
 
         # Si tenemos cliente Gemini API activo, usarlo para la síntesis inteligente
         if self.client:
-            try:
-                response = self.client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt_context,
-                )
-                if response and response.text:
-                    return response.text
-            except Exception as e:
-                print(f"[Info] Gemini API fallback activado ({e})")
+            for model_name in ['gemini-2.0-flash', 'gemini-1.5-flash']:
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt_context,
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    print(f"[Info] Modelo {model_name} no disponible ({e}). Intentando fallback...")
+
 
         # Fallback Estructurado Limpio si no hay API Key o hay error de red
         soluciones_md = "\n".join([f"  * {s}" for s in g_data.get('solucion', [])])

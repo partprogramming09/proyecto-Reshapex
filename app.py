@@ -56,17 +56,21 @@ def main():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Enviar la consulta al agente ReAct y renderizar respuesta
+        # Enviar la consulta al agente y renderizar respuesta
         with st.chat_message("assistant"):
             with st.spinner("Consultando la base de conocimiento LLS Electric..."):
                 try:
                     response = agent.chat(prompt)
                     response_text = str(response)
                 except Exception as e:
-                    response_text = f"Ocurrió un error al procesar la consulta: {e}"
+                    # Si OpenAI o el RAG falla por cuota (429), usar el engine de fallback de Gemini/LS Electric
+                    from src.core.agent import FallbackAgentWrapper
+                    fallback_agent = FallbackAgentWrapper()
+                    response_text = fallback_agent.chat(prompt)
 
                 st.markdown(response_text)
                 st.session_state.messages.append({"role": "assistant", "content": response_text})
+
 
 
 if __name__ == "__main__":

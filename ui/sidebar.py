@@ -52,16 +52,15 @@ def render_sidebar():
                     preview = extract_file_preview(uf)
                     st.code(preview, language=None)
 
-            if st.button("📤 Subir y Indexar", use_container_width=True):
-                with st.spinner("Guardando y indexando..."):
+            if st.button("📤 Procesar e Indexar", use_container_width=True):
+                with st.spinner("Guardando e indexando de forma incremental..."):
                     for uf in uploaded_files:
                         save_file(uf, data_raw_dir)
                     try:
-                        invalidate_index()
                         st.cache_resource.clear()
                     except Exception as e:
                         st.error(f"Error al indexar: {e}")
-                st.toast(f"✅ {len(uploaded_files)} documento(s) indexado(s)", icon="📄")
+                st.toast(f"✅ {len(uploaded_files)} documento(s) procesado(s)", icon="📄")
                 st.rerun()
 
         if st.button("🗑️ Limpiar Documentos", use_container_width=True):

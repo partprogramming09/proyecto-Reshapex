@@ -1,4 +1,6 @@
 import os
+import time
+import json
 import shutil
 import hashlib
 from pathlib import Path
@@ -15,12 +17,32 @@ from llama_index.core import (
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 
+DOC_HASHES_FILE = "doc_hashes.json"
+
+
+class ThrottledGoogleGenAIEmbedding(GoogleGenAIEmbedding):
+    """Modelo de embeddings con retardo de 2.0s y reintentos automáticos para evitar cuotas 429 de Gemini API."""
+
+    def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        time.sleep(2.0)
+        for attempt in range(4):
+            try:
+                return super()._get_text_embeddings(texts)
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait_time = 10 * (attempt + 1)
+                    print(f"[RAG Embeddings] Cuota (429) alcanzada. Esperando {wait_time}s antes de reintentar (Intento {attempt + 1}/4)...")
+                    time.sleep(wait_time)
+                else:
+                    raise e
+        return super()._get_text_embeddings(texts)
+
 
 def _get_embed_model() -> GoogleGenAIEmbedding:
-    """Obtiene el modelo de embeddings de Google Gemini.
+    """Obtiene el modelo de embeddings de Google Gemini con throttling de tasa de peticiones.
 
     Returns:
-        Instancia de GoogleGenAIEmbedding configurada.
+        Instancia de ThrottledGoogleGenAIEmbedding configurada.
 
     Raises:
         ValueError: Si GEMINI_API_KEY no está configurada.
@@ -30,11 +52,37 @@ def _get_embed_model() -> GoogleGenAIEmbedding:
     model_name = settings["embed_model"]
     if not api_key:
         raise ValueError("GEMINI_API_KEY no configurada para embeddings")
-    return GoogleGenAIEmbedding(model_name=model_name, api_key=api_key)
+    return ThrottledGoogleGenAIEmbedding(
+        model_name=model_name,
+        api_key=api_key,
+        embed_batch_size=5,
+    )
+
+
+def _get_file_hash(file_path: Path) -> str:
+    """Calcula el hash MD5 del contenido binario de un archivo."""
+    return hashlib.md5(file_path.read_bytes()).hexdigest()
+
+
+def _load_doc_hashes(storage_dir: Path) -> Dict[str, str]:
+    """Carga el mapa de hashes de documentos persistidos."""
+    doc_hashes_path = storage_dir / DOC_HASHES_FILE
+    if doc_hashes_path.exists():
+        try:
+            return json.loads(doc_hashes_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_doc_hashes(storage_dir: Path, hashes: Dict[str, str]) -> None:
+    """Guarda el mapa de hashes de documentos persistidos."""
+    doc_hashes_path = storage_dir / DOC_HASHES_FILE
+    doc_hashes_path.write_text(json.dumps(hashes, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _calculate_files_hash(directory: Path) -> str:
-    """Calcula hash MD5 de los archivos en un directorio.
+    """Calcula hash MD5 solo de los archivos con extensiones soportadas en un directorio.
 
     Args:
         directory: Directorio a escanear.
@@ -42,8 +90,11 @@ def _calculate_files_hash(directory: Path) -> str:
     Returns:
         Hash MD5 como string hexadecimal.
     """
-    files = sorted(directory.glob("*"))
-    content = "".join(f"{f.name}:{f.stat().st_size}" for f in files if f.is_file())
+    files = sorted(
+        f for f in directory.iterdir()
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+    )
+    content = "".join(f"{f.name}:{f.stat().st_size}" for f in files)
     return hashlib.md5(content.encode()).hexdigest()
 
 
@@ -111,7 +162,7 @@ def has_documents() -> bool:
 
 
 def load_or_create_index() -> Optional[VectorStoreIndex]:
-    """Carga índice persistido o crea uno nuevo desde data/raw/.
+    """Carga índice persistido o realiza vectorización incremental idempotente por archivo.
 
     Returns:
         VectorStoreIndex si hay documentos, None si no hay documentos.
@@ -135,56 +186,71 @@ def load_or_create_index() -> Optional[VectorStoreIndex]:
         print("[RAG] No hay documentos en data/raw/. Modo autónomo (solo Gemini).")
         return None
 
-    current_hash = _calculate_files_hash(data_raw_dir)
+    embed_model = _get_embed_model()
+    doc_hashes = _load_doc_hashes(storage_dir)
     hash_file_path = storage_dir / HASH_FILE_NAME
+    current_global_hash = _calculate_files_hash(data_raw_dir)
 
-    stored_hash = ""
-    if hash_file_path.exists():
-        stored_hash = hash_file_path.read_text().strip()
+    index: Optional[VectorStoreIndex] = None
 
+    # Intentar cargar índice existente desde disco
     storage_has_files = any(
         f for f in storage_dir.iterdir()
-        if f.is_file() and not f.name.startswith(".")
+        if f.is_file() and not f.name.startswith(".") and f.name != DOC_HASHES_FILE
     )
 
-    if storage_has_files and current_hash == stored_hash:
-        print("[RAG] Cargando índice persistido...")
+    if storage_has_files:
         try:
-            embed_model = _get_embed_model()
             storage_context = StorageContext.from_defaults(persist_dir=str(storage_dir))
             index = load_index_from_storage(storage_context, embed_model=embed_model)
-            print(f"[RAG] Índice cargado: {len(raw_documents)} documentos")
-            return index
         except Exception as e:
-            print(f"[RAG] Error cargando índice, regenerando: {e}")
+            print(f"[RAG] Error cargando índice existente: {e}. Se recreará el almacenamiento.")
             invalidate_index()
+            index = None
 
-    print(f"[RAG] Indexando {len(raw_documents)} documentos...")
-    try:
-        embed_model = _get_embed_model()
-        documents = SimpleDirectoryReader(
-            input_dir=str(data_raw_dir),
-            required_exts=SUPPORTED_EXTENSIONS,
-        ).load_data()
+    splitter = SentenceSplitter(
+        chunk_size=settings["chunk_size"],
+        chunk_overlap=settings["chunk_overlap"],
+    )
 
-        document_count = len(documents)
-        print(f"[RAG] {document_count} páginas/fragmentos extraídos")
+    newly_indexed_count = 0
 
-        splitter = SentenceSplitter(
-            chunk_size=settings["chunk_size"],
-            chunk_overlap=settings["chunk_overlap"],
-        )
-        index = VectorStoreIndex.from_documents(
-            documents,
-            embed_model=embed_model,
-            transformations=[splitter],
-        )
-        index.storage_context.persist(persist_dir=str(storage_dir))
+    # Ingestión Incremental e Idempotente por archivo
+    for file_path in raw_documents:
+        file_name = file_path.name
+        current_file_hash = _get_file_hash(file_path)
 
-        hash_file_path.write_text(current_hash)
-        print(f"[RAG] Índice persistido correctamente")
-        return index
+        # Si el archivo ya fue vectorizado previamente, Omitir (Skip)
+        if index is not None and doc_hashes.get(file_name) == current_file_hash:
+            print(f"[RAG Idempotente] Skip (Ya vectorizado): {file_name}")
+            continue
 
-    except Exception as e:
-        print(f"[RAG] Error al indexar: {e}")
-        return None
+        print(f"[RAG Idempotente] Indexando nuevo/modificado: {file_name}...")
+        try:
+            doc_reader = SimpleDirectoryReader(input_files=[str(file_path)]).load_data()
+            nodes = splitter.get_nodes_from_documents(doc_reader)
+
+            if index is None:
+                index = VectorStoreIndex(nodes, embed_model=embed_model)
+            else:
+                index.insert_nodes(nodes)
+
+            doc_hashes[file_name] = current_file_hash
+            newly_indexed_count += 1
+
+            # Persistir inmediatamente tras procesar cada documento
+            index.storage_context.persist(persist_dir=str(storage_dir))
+            _save_doc_hashes(storage_dir, doc_hashes)
+            print(f"[RAG Idempotente] Guardado en storage: {file_name} ({len(nodes)} fragmentos)")
+
+        except Exception as e:
+            print(f"[RAG Idempotente] Error al indexar {file_name}: {e}")
+
+    if index is not None:
+        hash_file_path.write_text(current_global_hash)
+        if newly_indexed_count > 0:
+            print(f"[RAG Idempotente] Ingestión completada. {newly_indexed_count} documento(s) nuevos indexados.")
+        else:
+            print(f"[RAG Idempotente] Todos los {len(raw_documents)} documentos ya estaban al día en caché.")
+
+    return index

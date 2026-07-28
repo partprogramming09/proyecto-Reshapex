@@ -96,11 +96,14 @@ Identifica el problema o consulta del usuario. Explica la causa probable y lista
 ETAPA 2 - RECOMENDACIÓN:
 Si aplica, recomienda equipos, variantes o soluciones específicas. Especifica compatibilidad, potencia, voltaje y dimensiones.
 
-ETAPA 3 - CITA DE ORIGEN:
-Termina SIEMPRE con la fuente de información. Si la información viene de un documento cargado, cita:
-📑 **Fuente:** [Nombre del documento], [Sección/Página]
-Si la información es de conocimiento general, indica:
-📑 **Fuente:** Conocimiento general de ingeniería industrial
+ETAPA 3 - CITA DE ORIGEN VERÍDICA:
+Termina SIEMPRE con la fuente exacta de la información de forma auditable:
+- Si la información proviene de un documento cargado en RAG:
+  `📑 Fuente: [Nombre del Archivo PDF real], Página [Número de página física real]`
+- Si se realizó consulta web oficial:
+  `🌐 Fuente Web Oficial: [URL o sitio oficial de LS Electric consultado]`
+- Si no hay fuente verificada disponible:
+  `No se encontró información técnica verificada en la base de conocimiento local ni en la búsqueda web oficial de LS Electric.`
 
 Consulta del usuario: "{query}"
 """

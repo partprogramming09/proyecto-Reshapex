@@ -4,6 +4,7 @@ import urllib.request
 import urllib.parse
 
 from config.settings import get_settings
+from config.llm_factory import LLMFactory
 from src.rag.indexer import load_or_create_index, has_documents
 from llama_index.core.tools import QueryEngineTool, ToolMetadata, FunctionTool
 
@@ -22,8 +23,10 @@ def get_knowledge_tool() -> Optional[QueryEngineTool]:
     if index is None:
         return None
 
+    llm = LLMFactory.get_llm()
     query_engine = index.as_query_engine(
-        similarity_top_k=settings["similarity_top_k"]
+        llm=llm,
+        similarity_top_k=settings["similarity_top_k"],
     )
 
     return QueryEngineTool(
